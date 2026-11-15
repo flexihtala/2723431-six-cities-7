@@ -1,41 +1,45 @@
 import {createReadStream} from 'node:fs';
-import {Transform, pipeline} from 'node:stream';
-import chalk from 'chalk';
+import {access} from 'node:fs/promises';
+import {createInterface} from 'node:readline';
+import {inject, injectable} from 'inversify';
+import {DatabaseClient} from '../database/database-client.interface.js';
+import {Logger} from '../logger/logger.interface.js';
+import {Component} from '../types/component.enum.js';
+import {UserService} from '../user/user-service.interface.js';
+import {OfferService} from './offer-service.interface.js';
 import {parseOffer} from './parse-offer.js';
 
-function formatOffer(line: string): string {
-  return line.trim() ? `${chalk.cyan(JSON.stringify(parseOffer(line), null, 2))}\n` : '';
-}
+@injectable()
+export class OfferImporter {
+  constructor(
+    @inject(Component.DatabaseClient) private readonly database: DatabaseClient,
+    @inject(Component.UserService) private readonly users: UserService,
+    @inject(Component.OfferService) private readonly offers: OfferService,
+    @inject(Component.Logger) private readonly logger: Logger
+  ) {}
 
-export function importOffers(filepath: string): void {
-  let remainder = '';
-  const parser = new Transform({
-    decodeStrings: false,
-    transform(chunk: string, _encoding, callback) {
-      try {
-        const lines = (remainder + chunk).split('\n');
-        remainder = lines.pop() ?? '';
-        return callback(null, lines.map(formatOffer).join(''));
-      } catch (error) {
-        const parseError = error as Error;
-        return callback(parseError);
-      }
-    },
-    flush(callback) {
-      try {
-        return callback(null, formatOffer(remainder));
-      } catch (error) {
-        const parseError = error as Error;
-        return callback(parseError);
-      }
-    },
-  });
+  public async import(filepath: string, uri: string): Promise<number> {
+    await access(filepath);
+    await this.database.connect(uri);
+    const lines = createInterface({input: createReadStream(filepath), crlfDelay: Infinity});
+    let count = 0;
 
-  pipeline(createReadStream(filepath, {encoding: 'utf8'}), parser, process.stdout,
-    (error) => {
-      if (error) {
-        console.error(chalk.red(`Ошибка импорта: ${error.message}`));
-        process.exitCode = 1;
+    try {
+      for await (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        const {author, ...offer} = parseOffer(line);
+        const user = await this.users.findByEmail(author.email) ?? await this.users.create(author);
+        await this.offers.create({...offer, author: user._id, commentCount: 0});
+        count++;
       }
-    });
+      this.logger.info(`Импортировано предложений: ${count}`);
+      return count;
+    } finally {
+      lines.close();
+      await this.database.disconnect();
+    }
+  }
 }
