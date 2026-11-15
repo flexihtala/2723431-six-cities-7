@@ -1,0 +1,796 @@
+openapi: 3.0.3
+info:
+  title: Шесть городов API
+  version: 1.0.0
+  description: >-
+    REST API сервиса предложений по аренде жилья в шести городах.
+    Авторизация выполняется через bearer-токен; отдельный выход из серверной сессии не требуется.
+  contact:
+    name: HTML Academy
+    url: https://htmlacademy.ru
+    email: mail@htmlacademy.ru
+servers:
+  - url: /api/v1
+tags:
+  - name: Offers
+    description: Предложения по аренде
+  - name: Comments
+    description: Комментарии к предложениям
+  - name: Users
+    description: Регистрация пользователей
+  - name: Auth
+    description: Вход и проверка авторизации
+  - name: Favorites
+    description: Избранные предложения текущего пользователя
+paths:
+  /offers:
+    get:
+      tags: [Offers]
+      operationId: listOffers
+      summary: Получить список предложений
+      description: По умолчанию возвращает не более 60 предложений, отсортированных по дате публикации от новых к старым.
+      parameters:
+        - name: limit
+          in: query
+          description: Запрашиваемое количество предложений.
+          schema:
+            type: integer
+            minimum: 1
+            default: 60
+      responses:
+        '200':
+          description: Список предложений.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OfferSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [Offers]
+      operationId: createOffer
+      summary: Создать предложение
+      description: Автором нового предложения становится пользователь из токена. Количество комментариев рассчитывает сервер.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferCreate'
+      responses:
+        '201':
+          description: Предложение создано.
+          headers:
+            Location:
+              description: Путь к созданному предложению.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Offer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /offers/{offerId}:
+    parameters:
+      - $ref: '#/components/parameters/OfferId'
+    get:
+      tags: [Offers]
+      operationId: getOffer
+      summary: Получить подробную информацию о предложении
+      responses:
+        '200':
+          description: Предложение найдено. Комментарии запрашиваются отдельно.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Offer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Offers]
+      operationId: updateOffer
+      summary: Изменить своё предложение
+      description: Можно изменять только предложение, созданное текущим пользователем.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferUpdate'
+      responses:
+        '200':
+          description: Обновлённое предложение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Offer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Offers]
+      operationId: deleteOffer
+      summary: Удалить своё предложение
+      description: Вместе с предложением удаляются все его комментарии.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Предложение и его комментарии удалены.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /offers/{offerId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/OfferId'
+    get:
+      tags: [Comments]
+      operationId: listOfferComments
+      summary: Получить комментарии к предложению
+      description: Возвращает не более 50 последних комментариев по дате публикации, начиная с нового.
+      responses:
+        '200':
+          description: Список комментариев.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Comments]
+      operationId: createOfferComment
+      summary: Добавить комментарий к предложению
+      description: Автор и дата публикации определяются сервером.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreate'
+      responses:
+        '201':
+          description: Комментарий создан.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /offers/premium/{city}:
+    parameters:
+      - $ref: '#/components/parameters/City'
+    get:
+      tags: [Offers]
+      operationId: listPremiumOffersByCity
+      summary: Получить премиальные предложения города
+      description: Возвращает не более трёх премиальных предложений по дате публикации, начиная с нового.
+      responses:
+        '200':
+          description: Премиальные предложения города.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 3
+                items:
+                  $ref: '#/components/schemas/OfferSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /users:
+    post:
+      tags: [Users]
+      operationId: registerUser
+      summary: Зарегистрировать пользователя
+      description: Доступно только анонимному клиенту. Пароль сохраняется как хеш и никогда не возвращается.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegister'
+      responses:
+        '201':
+          description: Пользователь зарегистрирован.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublic'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Войти в закрытую часть приложения
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Токен для заголовка Authorization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/status:
+    get:
+      tags: [Auth]
+      operationId: checkAuthStatus
+      summary: Проверить авторизацию
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Текущий пользователь.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublic'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /favorites:
+    get:
+      tags: [Favorites]
+      operationId: listFavorites
+      summary: Получить все избранные предложения
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Избранные предложения текущего пользователя.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OfferSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /favorites/{offerId}:
+    parameters:
+      - $ref: '#/components/parameters/OfferId'
+    put:
+      tags: [Favorites]
+      operationId: addFavorite
+      summary: Добавить предложение в избранное
+      description: Повторный запрос оставляет предложение в избранном.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Предложение добавлено в избранное.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Favorites]
+      operationId: removeFavorite
+      summary: Удалить предложение из избранного
+      description: Повторный запрос оставляет предложение вне избранного.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Предложение удалено из избранного.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Токен из ответа POST /auth/login в заголовке Authorization.
+
+  parameters:
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      description: Идентификатор предложения MongoDB.
+      schema:
+        type: string
+        pattern: '^[0-9a-fA-F]{24}$'
+    City:
+      name: city
+      in: path
+      required: true
+      description: Город, для которого нужны премиальные предложения.
+      schema:
+        $ref: '#/components/schemas/City'
+
+  responses:
+    BadRequest:
+      description: Неверный параметр запроса или идентификатор.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Токен отсутствует, недействителен или учётные данные неверны.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Клиенту запрещено выполнять операцию.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Предложение не найдено.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Пользователь с таким email уже существует.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ValidationError:
+      description: Поля запроса не прошли валидацию.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          description: HTTP-код ошибки.
+          example: 404
+        message:
+          type: string
+          example: Предложение не найдено.
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/ApiError'
+        - type: object
+          required: [details]
+          properties:
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+    City:
+      type: string
+      enum: [Paris, Cologne, Brussels, Amsterdam, Hamburg, Dusseldorf]
+      example: Paris
+    HousingType:
+      type: string
+      enum: [apartment, house, room, hotel]
+    Amenity:
+      type: string
+      enum:
+        - Breakfast
+        - Air conditioning
+        - Laptop friendly workspace
+        - Baby seat
+        - Washer
+        - Towels
+        - Fridge
+    Coordinates:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 48.85661
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: 2.351499
+
+    UserPublic:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, avatar, type]
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9a-fA-F]{24}$'
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 15
+        email:
+          type: string
+          format: email
+        avatar:
+          type: string
+          description: URL аватара; при отсутствии загруженного изображения возвращается аватар по умолчанию.
+        type:
+          type: string
+          enum: [ordinary, pro]
+    UserRegister:
+      type: object
+      additionalProperties: false
+      required: [name, email, password, type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 15
+        email:
+          type: string
+          format: email
+        avatar:
+          type: string
+          format: uri
+          pattern: '\.(jpg|png)$'
+          description: Необязательная ссылка на изображение JPG или PNG.
+        password:
+          type: string
+          minLength: 6
+          maxLength: 12
+          writeOnly: true
+        type:
+          type: string
+          enum: [ordinary, pro]
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+    Token:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Bearer-токен для последующих запросов.
+
+    OfferSummary:
+      type: object
+      required:
+        - id
+        - price
+        - title
+        - housingType
+        - isFavorite
+        - publicationDate
+        - city
+        - previewImage
+        - isPremium
+        - rating
+        - commentCount
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9a-fA-F]{24}$'
+          readOnly: true
+        price:
+          type: integer
+          minimum: 100
+          maximum: 100000
+        title:
+          type: string
+          minLength: 10
+          maxLength: 100
+        housingType:
+          $ref: '#/components/schemas/HousingType'
+        isFavorite:
+          type: boolean
+          description: Принадлежит ли предложение избранному текущего пользователя; для анонимного клиента false.
+        publicationDate:
+          type: string
+          format: date-time
+        city:
+          $ref: '#/components/schemas/City'
+        previewImage:
+          type: string
+          format: uri
+        isPremium:
+          type: boolean
+        rating:
+          type: number
+          format: float
+          minimum: 1
+          maximum: 5
+          multipleOf: 0.1
+        commentCount:
+          type: integer
+          minimum: 0
+          readOnly: true
+    Offer:
+      allOf:
+        - $ref: '#/components/schemas/OfferSummary'
+        - type: object
+          required: [description, images, rooms, guests, amenities, author, coordinates]
+          properties:
+            description:
+              type: string
+              minLength: 20
+              maxLength: 1024
+            images:
+              type: array
+              minItems: 6
+              maxItems: 6
+              items:
+                type: string
+                format: uri
+            rooms:
+              type: integer
+              minimum: 1
+              maximum: 8
+            guests:
+              type: integer
+              minimum: 1
+              maximum: 10
+            amenities:
+              type: array
+              minItems: 1
+              uniqueItems: true
+              items:
+                $ref: '#/components/schemas/Amenity'
+            author:
+              $ref: '#/components/schemas/UserPublic'
+            coordinates:
+              $ref: '#/components/schemas/Coordinates'
+
+    OfferCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - description
+        - publicationDate
+        - city
+        - previewImage
+        - images
+        - isPremium
+        - isFavorite
+        - rating
+        - housingType
+        - rooms
+        - guests
+        - price
+        - amenities
+        - coordinates
+      properties:
+        title:
+          type: string
+          minLength: 10
+          maxLength: 100
+        description:
+          type: string
+          minLength: 20
+          maxLength: 1024
+        publicationDate:
+          type: string
+          format: date-time
+        city:
+          $ref: '#/components/schemas/City'
+        previewImage:
+          type: string
+          format: uri
+        images:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            type: string
+            format: uri
+        isPremium:
+          type: boolean
+        isFavorite:
+          type: boolean
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          multipleOf: 0.1
+        housingType:
+          $ref: '#/components/schemas/HousingType'
+        rooms:
+          type: integer
+          minimum: 1
+          maximum: 8
+        guests:
+          type: integer
+          minimum: 1
+          maximum: 10
+        price:
+          type: integer
+          minimum: 100
+          maximum: 100000
+        amenities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Amenity'
+        coordinates:
+          $ref: '#/components/schemas/Coordinates'
+
+    OfferUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Частичное обновление полей предложения. Автор и количество комментариев не изменяются.
+      properties:
+        title:
+          type: string
+          minLength: 10
+          maxLength: 100
+        description:
+          type: string
+          minLength: 20
+          maxLength: 1024
+        publicationDate:
+          type: string
+          format: date-time
+        city:
+          $ref: '#/components/schemas/City'
+        previewImage:
+          type: string
+          format: uri
+        images:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            type: string
+            format: uri
+        isPremium:
+          type: boolean
+        isFavorite:
+          type: boolean
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          multipleOf: 0.1
+        housingType:
+          $ref: '#/components/schemas/HousingType'
+        rooms:
+          type: integer
+          minimum: 1
+          maximum: 8
+        guests:
+          type: integer
+          minimum: 1
+          maximum: 10
+        price:
+          type: integer
+          minimum: 100
+          maximum: 100000
+        amenities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Amenity'
+        coordinates:
+          $ref: '#/components/schemas/Coordinates'
+
+    Comment:
+      type: object
+      additionalProperties: false
+      required: [id, text, publicationDate, rating, author]
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9a-fA-F]{24}$'
+          readOnly: true
+        text:
+          type: string
+          minLength: 5
+          maxLength: 1024
+        publicationDate:
+          type: string
+          format: date-time
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        author:
+          $ref: '#/components/schemas/UserPublic'
+    CommentCreate:
+      type: object
+      additionalProperties: false
+      required: [text, rating]
+      properties:
+        text:
+          type: string
+          minLength: 5
+          maxLength: 1024
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
