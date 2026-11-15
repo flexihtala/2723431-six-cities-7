@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import 'reflect-metadata';
 import {runCLI} from './cli.js';
 
-runCLI(process.argv.slice(2));
+runCLI(process.argv.slice(2)).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});
